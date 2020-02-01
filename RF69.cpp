@@ -393,7 +393,7 @@ RF_API rfapi;
 #endif	/////////////////////////// SX1276
 
 // transceiver states, these determine what to do with each interrupt
-enum { TXCRC1, TXCRC2, TXDONE, TXIDLE, TXRECV, RXFIFO, RESTART1, RESTART2 };
+enum { TXCRC1, TXCRC2, TXDONE, TXIDLE, TXRECV, RXFIFO };
 
 byte clearAir = 190;
 
@@ -440,7 +440,7 @@ static volatile int16_t fei;
 static volatile int16_t lastFEI;
 static volatile uint16_t delayTXRECV;
 static volatile uint16_t rst;
-volatile uint32_t tfr;
+volatile int32_t tfr;
 static volatile uint32_t previousMillis;
 static volatile uint32_t noiseMillis;
 static volatile uint32_t SYNCinterruptMillis;
@@ -789,15 +789,10 @@ uint16_t RF69::recvDone_compat (uint8_t* buf) {
 
     switch (rxstate) {
     
-    case RESTART1:
-
-    case RESTART2:
-    
     case TXIDLE:
         rxdone = false;
         rxfill = rf69_buf[2] = 0;
         recvBuf = buf;
-//        setMode(MODE_STANDBY);
         startRSSI = currentRSSI();       
 
 		rf12_drx = delayTXRECV;
@@ -1121,8 +1116,7 @@ second rollover and then will be 1.024 mS out.
                     if (readReg(REG_IRQFLAGS1) & IRQ1_SYNCMATCH) {
             			tfr =  micros() - startRX;	// 4µs precision
 				        rxstate = RXFIFO;                       
-//        				IRQ_ENABLE;       // allow nested interrupts from here on        
-						if (tfr < missedCarry) tfr = tfr + 1024UL;
+						if (tfr < missedCarry) tfr = tfr + 1024L;
                         rfapi.syncMatch++;                     
                 		noiseMillis = ms;	// Delay a reduction in sensitivity
                         break;
@@ -1134,11 +1128,10 @@ second rollover and then will be 1.024 mS out.
                         minimum i.e. 0.02uS per bit x 6bytes is 
                         about 1mS minimum."
 */
-/*New*/					writeReg(REG_AFCFEI, AFC_CLEAR);                                                                
-//        				setMode(MODE_FS_RX);
+						writeReg(REG_AFCFEI, AFC_CLEAR);                                                                
 					    setMode(MODE_STANDBY);
         				writeReg(REG_IRQFLAGS2, IRQ2_FIFOOVERRUN);  // Clear FIFO
-                        rxstate = RESTART1;   // Cause a RX restart by FSM
+//                        rxstate = RESTART1;   // Cause a RX restart by FSM
         				// Collect RX stats per LNA
 	                	rfapi.RSSIrestart++;
 	                	rfapi.cumRSSI[lna] = rfapi.cumRSSI[lna] + (uint32_t)rssi; 
@@ -1166,7 +1159,7 @@ second rollover and then will be 1.024 mS out.
             } //  RSSI 
                        
 // Sync match achieved
-
+//			PreventInterrupt RF69_avr_h_INT;
         	IRQ_ENABLE;       // allow nested interrupts from here on  
         	                                             
         	rfapi.interpacketTS = ms;	// Value stored at time of interrupt            			
@@ -1207,7 +1200,6 @@ second rollover and then will be 1.024 mS out.
                     crc = _crc16_update(crc, in);              
                     if (rxfill >= (payloadLen + (5 - rf69_skip))) {  // Trap end of payload
                         writeReg(REG_AFCFEI, AFC_CLEAR);
-//			        	setMode(MODE_FS_RX);
 					    setMode(MODE_STANDBY);
             			writeReg(REG_IRQFLAGS2, IRQ2_FIFOOVERRUN);  // Clear FIFO
                         stillCollecting = false;
@@ -1227,7 +1219,6 @@ second rollover and then will be 1.024 mS out.
             rxP++;
             
             writeReg(REG_AFCFEI, AFC_CLEAR);
-//        	setMode(MODE_FS_RX);
 		    setMode(MODE_STANDBY);
             rxdone = true;      // force TXRECV in RF69::recvDone_compat       
             rxstate = TXRECV;   // Restore state machine
@@ -1251,7 +1242,6 @@ second rollover and then will be 1.024 mS out.
           	// rxstate will be TXDONE at this point
           	txP++;
             writeReg(REG_AFCFEI, AFC_CLEAR);	// If we are in RX mode
-//        	setMode(MODE_FS_RX);
     		setMode(MODE_STANDBY);
     		writeReg(REG_PALEVEL, 0);	// Drop TX power to clear airwaves quickly	
  			writeReg(REG_IRQFLAGS2, IRQ2_FIFOOVERRUN);  // Clear FIFO
@@ -1263,7 +1253,7 @@ second rollover and then will be 1.024 mS out.
 #endif
 */
         } else {
-            // We get here when a interrupt that is not for RX/TX completion.
+            // We get here when a interrupt that is not for RX completion.
             // Appears related to receiving noise when the bad CRC
             // packet display is enabled using "0q".
             // Instances of an interrupt entering here while in FS mode 8 - PLL?
@@ -1274,19 +1264,16 @@ second rollover and then will be 1.024 mS out.
             unexpected++;
 			writeReg(REG_AFCFEI, AFC_CLEAR);			// If we are in RX mode
     		writeReg(REG_PALEVEL, 0);	// Drop TX power to clear airwaves quickly	
-//        	setMode(MODE_FS_RX);
     		setMode(MODE_STANDBY);
 			writeReg(REG_IRQFLAGS2, IRQ2_FIFOOVERRUN);  // Clear FIFO
-            rxstate = RESTART2;   // Cause a RX restart by FSM
         }
 	}
 
 #if TX_INTERRUPT
-#warning RF69.cpp: TX completed using an Interrupt       
-void RF69::interruptTX () {
+#warning RF69.cpp: TX completed using an Interrupt 
+      void RF69::interruptTX () {
 //	    if (readReg(REG_IRQFLAGS2) & IRQ2_PACKETSENT) {
     		writeReg(REG_PALEVEL, 0);	// Drop TX power to clear airwaves quickly	
-//        	setMode(MODE_FS_RX);
 		    setMode(MODE_STANDBY);
 	#if !SX1276
           	writeReg(REG_OCP, OCP_NORMAL);			// Overcurrent protection on
@@ -1296,8 +1283,6 @@ void RF69::interruptTX () {
 	#endif
           	// rxstate will be TXDONE at this point
           	txP++;
-//            writeReg(REG_AFCFEI, AFC_CLEAR);	// If we are in RX mode
-// 			writeReg(REG_IRQFLAGS2, IRQ2_FIFOOVERRUN);  // Clear FIFO
          	// Restore sync bytes configuration
           	if (group == 0) {               // Allow receiving from all groups
 				writeReg(REG_SYNCCONFIG, threeByteSync);             

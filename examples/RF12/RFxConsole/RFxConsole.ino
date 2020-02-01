@@ -1370,12 +1370,13 @@ static void handleInput (char c) {
             		 showString(PSTR("InterruptTXIDLECount="));
             		 Serial.println(rfapi.TXIDLECount);
             		 
+            		 showString(PSTR("intRXFIFO="));
+            		 Serial.println(rfapi.intRXFIFO);
+
             		 showString(PSTR("Debug="));
             		 Serial.println(rfapi.debug);
             		 rfapi.debug = 0;
             		 
-            		 showString(PSTR("intRXFIFO="));
-            		 Serial.println(rfapi.intRXFIFO);
             		 showString(PSTR("LastLen="));
             		 Serial.println(rfapi.lastLen);
                      if (df_present())
